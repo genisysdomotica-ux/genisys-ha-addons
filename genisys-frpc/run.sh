@@ -1,90 +1,52 @@
-#!/usr/bin/env bash
+#!/usr/bin/with-contenv bashio
 set -euo pipefail
 
-# Legge opzioni dall’add-on
-FRP_ADDR="$(bashio::config 'frp_server_addr')"
-FRP_PORT="$(bashio::config 'frp_server_port')"
-FRP_TOKEN="$(bashio::config 'frp_shared_token')"
-
-LOCAL_IP="$(bashio::config 'local_ip')"
-LOCAL_PORT="$(bashio::config 'local_port')"
-SUBDOMAIN="$(bashio::config 'subdomain')"
-CUSTOM_DOMAIN="$(bashio::config 'custom_domain')"
-
 bashio::log.info "Avvio Genisys FRPC add-on"
-bashio::log.info "Scarico frpc ${FRP_VERSION:-0.64.0}..."
 
-ARCH="$(uname -m)"
-URL_BASE="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION:-0.64.0}"
-case "$ARCH" in
-  x86_64)   PKG="frp_${FRP_VERSION:-0.64.0}_linux_amd64.tar.gz" ;;
-  aarch64)  PKG="frp_${FRP_VERSION:-0.64.0}_linux_arm64.tar.gz" ;;
-  armv7l)   PKG="frp_${FRP_VERSION:-0.64.0}_linux_arm.tar.gz" ;;
-  armv6l)   PKG="frp_${FRP_VERSION:-0.64.0}_linux_arm.tar.gz" ;;
-  i686)     PKG="frp_${FRP_VERSION:-0.64.0}_linux_386.tar.gz" ;;
-  *)        bashio::log.fatal "Arch non supportata: $ARCH" ;;
-esac
+# --- Leggo configurazione dall’UI dell’add-on ---
+FRP_SERVER_ADDR=$(bashio::config 'frp_server_addr')
+FRP_SERVER_PORT=$(bashio::config 'frp_server_port')
+FRP_SHARED_TOKEN=$(bashio::config 'frp_shared_token')
+LOCAL_IP=$(bashio::config 'local_ip')
+LOCAL_PORT=$(bashio::config 'local_port')
+SUBDOMAIN=$(bashio::config 'subdomain')
+CUSTOM_DOMAIN=$(bashio::config 'custom_domain')
 
-TMP=/tmp/frp
-mkdir -p "$TMP"
-curl -fsSL -o "$TMP/frpc.tgz" "${URL_BASE}/${PKG}"
-tar -C "$TMP" -xzf "$TMP/frpc.tgz"
-FRPDIR="$(find "$TMP" -maxdepth 1 -type d -name 'frp_*' | head -n1)"
-install -m0755 "$FRPDIR/frpc" /usr/local/bin/frpc
-
-# Crea frpc.ini
-CONF=/data/frpc.ini
-{
-  echo "[common]"
-  echo "server_addr = ${FRP_ADDR}"
-  echo "server_port = ${FRP_PORT}"
-  echo "token = ${FRP_TOKEN}"
-  echo
-  echo "[homeassistant]"
-  echo "type = http"
-  echo "local_ip = ${LOCAL_IP}"
-  echo "local_port = ${LOCAL_PORT}"
-  if [[ -n "${SUBDOMAIN}" ]]; then
-    echo "subdomain = ${SUBDOMAIN}"
-  fi
-  if [[ -n "${CUSTOM_DOMAIN}" ]]; then
-    echo "custom_domains = ${CUSTOM_DOMAIN}"
-  fi
-} > "$CONF"
-
-bashio::log.info "Configurazione FRPC:"
-cat "$CONF" | sed -E 's/(token = ).+/\1****/'
-
-# Avvia FRPC
-exec frpc -c "$CONF"
-
+# --- Validazioni minime ---
+if [[ -z "${FRP_SERVER_ADDR}" || -z "${FRP_SHARED_TOKEN}" ]]; then
+  bashio::log.fatal "frp_server_addr e frp_shared_token sono obbligatori"
+  exit 1
 fi
 
-# Mappa architettura
-ARCH="$(apk --print-arch || true)"
+# --- Scarico frpc se non presente ---
+ARCH="$(bashio::info.arch)"
+# Mappatura arch -> nome frp binario
 case "$ARCH" in
-  x86_64)   FRP_ARCH="amd64" ;;
-  aarch64)  FRP_ARCH="arm64" ;;
-  armv7|armhf) FRP_ARCH="arm" ;;
-  i386|x86) FRP_ARCH="386" ;;
-  *) echo "[ERROR] Architettura non supportata: $ARCH"; exit 1 ;;
+  aarch64)  FRP_ARCH="linux_arm64" ;;
+  armv7)    FRP_ARCH="linux_arm" ;;
+  armhf)    FRP_ARCH="linux_arm" ;;
+  i386)     FRP_ARCH="linux_386" ;;
+  amd64)    FRP_ARCH="linux_amd64" ;;
+  *)        bashio::log.fatal "Architettura non supportata: $ARCH"; exit 1 ;;
 esac
 
-# Scarico frpc se assente
-mkdir -p /opt/frp /data
-cd /opt/frp
-if [[ ! -x ./frpc ]]; then
-  URL="https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_linux_${FRP_ARCH}.tar.gz"
-  echo "[INFO] Scarico frpc ${FRPC_VERSION} (${FRP_ARCH})..."
-  curl -fsSL "$URL" -o frp.tgz
-  tar -xzf frp.tgz --strip-components=1 "frp_${FRPC_VERSION}_linux_${FRP_ARCH}/frpc"
-  rm -f frp.tgz
-  chmod +x frpc
+FRP_VERSION="0.64.0"
+FRP_TGZ="frp_${FRP_VERSION}_${FRP_ARCH}.tar.gz"
+FRP_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FRP_TGZ}"
+
+if [[ ! -x /data/frpc ]]; then
+  bashio::log.info "Scarico frpc ${FRP_VERSION} (${FRP_ARCH})..."
+  TMPDIR=$(mktemp -d)
+  curl -fsSL -o "${TMPDIR}/${FRP_TGZ}" "${FRP_URL}"
+  tar -xzf "${TMPDIR}/${FRP_TGZ}" -C "${TMPDIR}"
+  cp "${TMPDIR}/frp_${FRP_VERSION}_${FRP_ARCH}/frpc" /data/frpc
+  chmod +x /data/frpc
+  rm -rf "${TMPDIR}"
 fi
 
-# Genero configurazione INI
-CFG="/data/frpc.ini"
-cat > "$CFG" <<EOF
+# --- Genero configurazione INI per frpc ---
+bashio::log.info "Configuro FRPC..."
+cat > /data/frpc.ini <<EOF
 [common]
 server_addr = ${FRP_SERVER_ADDR}
 server_port = ${FRP_SERVER_PORT}
@@ -96,15 +58,20 @@ local_ip = ${LOCAL_IP}
 local_port = ${LOCAL_PORT}
 EOF
 
-if [[ -n "$CUSTOM_DOMAIN" ]]; then
-  echo "custom_domains = ${CUSTOM_DOMAIN}" >> "$CFG"
-elif [[ -n "$SUBDOMAIN" ]]; then
-  echo "subdomain = ${SUBDOMAIN}" >> "$CFG"
+# Se c'è custom_domain uso quello, altrimenti subdomain
+if [[ -n "${CUSTOM_DOMAIN}" ]]; then
+  echo "custom_domains = ${CUSTOM_DOMAIN}" >> /data/frpc.ini
+else
+  # Nota: solo la parte prima del dominio; es: ha-mario
+  if [[ -n "${SUBDOMAIN}" ]]; then
+    echo "subdomain = ${SUBDOMAIN}" >> /data/frpc.ini
+  fi
 fi
 
-echo "[INFO] Configurazione FRPC:"
-sed -e "s/${FRP_SHARED_TOKEN:0:4}.*/****/" "$CFG"
+bashio::log.info "Configurazione FRPC:"
+sed 's/token = .*/token = ****/g' /data/frpc.ini | sed 's/^/  /'
 
-echo "[INFO] Avvio frpc..."
-exec /opt/frp/frpc -c "$CFG"
+# --- Avvio frpc ---
+bashio::log.info "Avvio frpc..."
+exec /data/frpc -c /data/frpc.ini
 
