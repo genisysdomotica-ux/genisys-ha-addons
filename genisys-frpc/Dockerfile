@@ -1,13 +1,12 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+# Base ufficiale per add-on Home Assistant (include s6-overlay e bashio)
+FROM ghcr.io/hassio-addons/base:16.1.1
 
-# (Le base image HA includono s6 & bashio; teniamo l'immagine pulita)
+# Facoltativo ma utile per debug
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Copia lo start script
+# Copia lo script di avvio
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
-# Avvio
+# Avvia lo script (lo shebang userà with-contenv+bashio)
 CMD [ "/run.sh" ]
-
