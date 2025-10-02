@@ -1,6 +1,6 @@
 name: Genisys FRPC
 slug: genisys-frpc          # usa lo stesso nome della cartella dell'add-on
-version: "0.4.1"            # alza sempre la versione quando modifichi
+version: "0.4.2"            # alza sempre la versione quando modifichi
 description: Espone Home Assistant tramite FRP (reverse proxy) usando un token condiviso.
 url: https://github.com/genisysdomotica-ux/genisys-ha-addons
 
