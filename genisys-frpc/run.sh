@@ -18,9 +18,21 @@ if [[ -z "${FRP_SERVER_ADDR}" || -z "${FRP_SHARED_TOKEN}" ]]; then
   exit 1
 fi
 
+# --- Calcolo NAMESPACE per FRP (user=...) ---
+# Priorità:
+#  1) SUBDOMAIN se presente
+#  2) primo label del CUSTOM_DOMAIN (es. ha-mario.genisysdomotica.it -> ha-mario)
+#  3) hostname del container (fallback)
+NAMESPACE="${SUBDOMAIN:-}"
+if [[ -z "$NAMESPACE" && -n "${CUSTOM_DOMAIN:-}" ]]; then
+  NAMESPACE="${CUSTOM_DOMAIN%%.*}"
+fi
+if [[ -z "$NAMESPACE" ]]; then
+  NAMESPACE="$(hostname)"
+fi
+
 # --- Scarico frpc se non presente ---
 ARCH="$(bashio::info.arch)"
-# Mappatura arch -> nome frp binario
 case "$ARCH" in
   aarch64)  FRP_ARCH="linux_arm64" ;;
   armv7)    FRP_ARCH="linux_arm" ;;
@@ -51,6 +63,7 @@ cat > /data/frpc.ini <<EOF
 server_addr = ${FRP_SERVER_ADDR}
 server_port = ${FRP_SERVER_PORT}
 token = ${FRP_SHARED_TOKEN}
+user = ${NAMESPACE}
 
 [homeassistant]
 type = http
@@ -62,16 +75,16 @@ EOF
 if [[ -n "${CUSTOM_DOMAIN}" ]]; then
   echo "custom_domains = ${CUSTOM_DOMAIN}" >> /data/frpc.ini
 else
-  # Nota: solo la parte prima del dominio; es: ha-mario
   if [[ -n "${SUBDOMAIN}" ]]; then
     echo "subdomain = ${SUBDOMAIN}" >> /data/frpc.ini
   fi
 fi
 
 bashio::log.info "Configurazione FRPC:"
+# maschero il token, mostro anche il namespace calcolato
 sed 's/token = .*/token = ****/g' /data/frpc.ini | sed 's/^/  /'
+bashio::log.info "Namespace (user) impostato a: ${NAMESPACE}"
 
 # --- Avvio frpc ---
 bashio::log.info "Avvio frpc..."
 exec /data/frpc -c /data/frpc.ini
-
