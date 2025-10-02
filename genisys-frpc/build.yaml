@@ -1,0 +1,16 @@
+build_from:
+  aarch64: "ghcr.io/home-assistant/aarch64-base:3.19"
+  amd64:   "ghcr.io/home-assistant/amd64-base:3.19"
+  armv7:   "ghcr.io/home-assistant/armv7-base:3.19"
+  armhf:   "ghcr.io/home-assistant/armhf-base:3.19"
+  i386:    "ghcr.io/home-assistant/i386-base:3.19"
+
+labels:
+  org.opencontainers.image.title: "Genisys FRPC"
+  org.opencontainers.image.description: "Expose Home Assistant over FRP using a shared token."
+  org.opencontainers.image.vendor: "Genisys Domotica"
+  org.opencontainers.image.licenses: "MIT"
+
+args:
+  FRP_VERSION: "0.64.0"
+
